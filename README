@@ -1,0 +1,336 @@
+
+PRODUCT REQUIREMENTS DOCUMENT (PRD)
+1) Project Overview
+Project: Local web app that turns highlighted reading passages into high-quality spaced-repetition Q&A cards (Matuschak-style), lets me edit/curate them, and exports selected cards into Mochi Cards.
+Working name: PromptForge
+Version scope: V0 (text-only input, selection-based generation)
+
+2) Purpose & Problem
+Purpose
+I want a fast workflow for turning what I’m reading into good retrieval practice prompts, not generic flashcards.
+Problem it solves
+Writing good spaced repetition prompts is hard and slow.
+Most tools generate low-quality cards: vague, broad, yes/no, inconsistent, or too much per card.
+I use Mochi already and want a quick pipeline into it.
+
+3) Target User
+Single user: Me
+Usage mode: Local (personal machine)
+Skill level: non-developer (but comfortable with Python basics)
+
+4) Goals & Success Criteria
+V0 goals
+Paste text → highlight selection → click generate → receive 3–5 excellent Q&A cards.
+Cards follow principles from Andy Matuschak’s prompt-writing guidance:
+Focused (one knowledge unit)
+Precise (unambiguous; avoids alternative correct answers)
+Consistent (same answer each review)
+Tractable (answerable reliably; not annoying)
+Effortful (not guessable from the question wording alone)
+Allow rapid editing and curation.
+Export selected cards to Mochi in a format that imports cleanly.
+Runs locally; saved work persists.
+Non-goals (V0)
+No screenshots/images (V1)
+No full-document generation (selection-only)
+No cloze deletions
+No multiple-choice
+No spaced repetition scheduling inside this app
+
+5) Key Product Decisions (Locked)
+Generation is selection-only (highlight text to generate).
+Cards are Q&A only (no cloze).
+Balanced card mix by default: factual + conceptual.
+Difficulty slider exists: Basic / Medium / Deep.
+No invented examples (cards must remain grounded in selected text).
+Local-first: app runs locally; data and keys stored locally.
+LLM providers: OpenAI + Anthropic (switchable; for testing).
+
+6) Core User Flows
+Flow A — Generate from selection
+Open app → Workspace.
+Paste reading material into editor.
+Highlight a passage.
+Choose difficulty (Basic/Medium/Deep).
+Click Generate Cards (or keyboard shortcut).
+App shows 3–5 generated cards.
+User edits questions/answers.
+User selects cards to keep and saves them to library.
+Flow B — Save source text (optional)
+After paste, app detects paste event.
+Pop-up: “Save this source?” with:
+Title (required to save)
+Optional tags
+User saves or dismisses.
+Saved sources accessible later; cards can link to a source.
+Flow C — Export to Mochi
+User opens Saved Cards.
+Filters/selects desired cards.
+Click export:
+CSV (Front/Back)
+Markdown format
+Downloads file to import into Mochi.
+Flow D — Switch models/providers
+User opens Settings.
+Select provider (OpenAI/Anthropic).
+Enter API key (stored locally).
+Select model.
+Click “Test” to verify.
+
+7) Functional Requirements
+7.1 Editor & Selection
+Large text editor area for paste/edit.
+Must support highlighting/selecting text inside the editor.
+Show “Selection length” indicator (chars or words).
+Generate Cards button disabled if selection is empty.
+Optional: keyboard shortcut (Cmd/Ctrl+Enter) triggers generate if selection exists.
+7.2 Card Generation (Selection-only)
+Input to LLM:
+Highlighted selection text
+Difficulty setting
+Optional source title
+Output:
+3–5 cards (or 1–2 if selection too small)
+Each card must include question + answer and a short supporting quote
+Card Types (metadata)
+Cards must include a type:
+factual (definitions, specific facts, named items, direct statements)
+conceptual (purpose, distinctions, cause/effect, role/implication—only if supported)
+procedural (steps/conditions—only if present in selection)
+salience (rare; only in Deep when selection explicitly suggests a trigger/behavior)
+7.3 Card Mix Rules (per your preference)
+Default preference: mix factual + conceptual.
+Basic
+~70% factual, simple recall, minimal inference.
+Medium (default)
+~50/50 factual/conceptual when selection allows.
+Deep
+~70% conceptual (but still precise + consistent); allow max 1 salience card only if supported.
+7.4 “No Examples” Rule (Strict)
+Do not invent examples.
+Do not ask user to generate examples (“Name 2 examples…”).
+Only reference examples if explicitly present in the selection and needed to make a question precise.
+7.5 Card Viewing, Editing, and Curation
+Generated cards displayed in a list.
+Each card has:
+Editable Question
+Editable Answer
+Expand/collapse Source Quote
+Checkbox: Keep
+Actions:
+Save kept cards to library
+Delete generated cards
+Regenerate (with same selection and settings)
+7.6 Saved Cards Library
+Separate view listing saved cards.
+Filters:
+Source title
+Date created
+Difficulty/provider/model (optional metadata)
+Cards remain editable in library.
+7.7 Export (Mochi)
+Provide two exports:
+CSV
+Columns: Front, Back
+Front = Question
+Back = Answer
+Markdown
+Format per card:
+Question
+---
+Answer
+Cards separated by blank line.
+Export only Q/A in V0 (no metadata in exports).
+
+8) LLM Prompt Specification (V0)
+8.1 Strict Output Schema
+LLM must return JSON only, matching:
+{
+  "cards": [
+    {
+      "type": "factual|conceptual|procedural|salience",
+      "question": "string",
+      "answer": "string",
+      "source_quote": "string",
+      "inference": false
+    }
+  ]
+}
+
+Field rules
+source_quote: exact excerpt from selection, max ~25 words.
+inference: true only if answer is not explicitly stated.
+Answers should be short and checkable (aim 3–20 words unless unavoidable).
+8.2 Prompt Quality Rules (Matuschak-aligned)
+Every card must satisfy:
+Focused: one knowledge unit
+Precise: no ambiguity, avoid alternative correct answers
+Consistent: same answer each time
+Tractable: realistically answerable
+Effortful: cannot be answered by guessing from the prompt phrasing alone
+Avoid yes/no questions.
+Avoid pattern-matching long copied sentences; keep questions short.
+8.3 Full Prompt Pack (copy/paste into code)
+SYSTEM PROMPT
+You are an expert at writing spaced-repetition retrieval practice prompts.
+Your job is to produce high-quality Q&A flashcards that create durable understanding.
+You follow these principles:
+- Focused: one knowledge unit per card.
+- Precise: unambiguous; avoid alternative correct answers.
+- Consistent: same answer each time.
+- Tractable: answerable reliably; not annoying.
+- Effortful: requires retrieval, not guesswork.
+Avoid yes/no questions. Avoid vague or overly broad prompts.
+Return JSON only in the exact schema requested.
+
+DEVELOPER PROMPT
+TASK
+Generate 3–5 spaced-repetition Q&A cards from ONLY the Selected Text provided by the user.
+Cards must be in strict JSON format. No additional commentary.
+
+HARD CONSTRAINTS
+- Use ONLY the Selected Text. Do not use outside knowledge.
+- Do NOT invent examples.
+- Do NOT ask the user to generate examples.
+- Do NOT create cloze deletions; Q&A only.
+- Avoid yes/no questions.
+- Each card must target ONE knowledge unit.
+- Answers must be short and checkable (aim 3–20 words unless unavoidable).
+- Include a short exact supporting quote (<= 25 words) from the Selected Text for each card.
+- Set inference=false if the answer is explicitly supported by the quote; otherwise inference=true.
+
+CARD MIX & DIFFICULTY
+Default goal: produce a balanced set of factual + conceptual cards.
+
+Difficulty = BASIC:
+- Prefer factual cards (~70%).
+- Simple direct questions.
+- Avoid “why/how” unless directly stated in Selected Text.
+
+Difficulty = MEDIUM:
+- Balanced factual + conceptual (~50/50).
+- Include conceptual edges when supported: purpose, difference, cause/effect.
+
+Difficulty = DEEP:
+- Prefer conceptual cards (~70%).
+- Use why/how/role/implication only when directly supported.
+- You may include at most 1 salience card only if Selected Text explicitly suggests a practical trigger/behavior.
+
+NO EXAMPLES RULE (STRICT)
+- Do NOT invent examples.
+- Do NOT ask the user to generate examples.
+- Only reference examples if explicitly present in Selected Text and required for precision.
+
+OUTPUT FORMAT (STRICT JSON ONLY)
+Return exactly:
+{
+  "cards": [
+    {
+      "type": "factual|conceptual|procedural|salience",
+      "question": "...",
+      "answer": "...",
+      "source_quote": "...",
+      "inference": false
+    }
+  ]
+}
+
+USER MESSAGE TEMPLATE
+Title (optional): {TITLE}
+Difficulty: {BASIC|MEDIUM|DEEP}
+
+Selected Text:
+"""
+{SELECTED_TEXT}
+"""
+
+
+9) UI / Information Architecture
+Tabs
+Workspace
+Editor (paste text)
+Difficulty selector (Basic/Medium/Deep)
+Generate Cards button
+Generated Cards panel (edit + keep)
+Saved Cards
+Library list
+Filters
+Export buttons (CSV / Markdown)
+Settings
+Provider (OpenAI/Anthropic)
+Model name
+API key
+Test connection
+UX requirements
+Clean, minimal, “slick” look.
+Fast feedback: loading spinner + clear error message on failure.
+Keyboard friendly.
+
+10) Technical Requirements (Local-first)
+10.1 Running locally
+Web app runs locally in browser.
+No server required for V0 (unless needed for key security; but requirement is local-first).
+10.2 Storage
+Persist locally:
+Saved sources (optional)
+Saved cards
+Settings (provider/model)
+API keys (locally; with warning)
+Recommended:
+IndexedDB for cards/sources
+localStorage for lightweight settings (ok)
+10.3 Provider support
+Must support both:
+OpenAI API
+Anthropic API
+Provider switch changes endpoint + request shape accordingly.
+10.4 Limits & safety
+Selection max length (configurable, e.g. 10k–20k chars).
+If selection too long:
+warn user
+offer truncate option.
+10.5 Robust JSON handling
+Validate returned JSON.
+If invalid JSON:
+auto-retry once with “Return valid JSON in schema” repair instruction
+if still invalid: show raw output + copy button.
+
+11) Data Model
+Source
+id
+title
+content
+created_at
+tags (optional)
+Card
+id
+source_id (nullable)
+type
+question
+answer
+source_quote
+inference
+created_at
+provider/model (optional metadata)
+
+12) Acceptance Criteria (V0)
+✅ Generate works only with a selection.
+✅ Output is 3–5 Q&A cards, strict JSON schema, with quotes.
+✅ Cards are focused/precise/consistent/tractable/effortful.
+✅ Difficulty slider changes card depth and mix correctly.
+✅ No invented examples appear.
+✅ Edit + keep + saved library works.
+✅ Export to CSV/Markdown works for Mochi import.
+✅ Local persistence across refresh/reopen.
+✅ Provider switching (OpenAI/Anthropic) works and is testable.
+
+13) Future Version (V1)
+Add screenshot/image input:
+upload screenshot
+OCR or vision extraction
+then selection-based generation on extracted text
+Potential later:
+prompt revision workflow (flag weak cards)
+batch generation across multiple selections
+
+
