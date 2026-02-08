@@ -2,7 +2,7 @@
 PRODUCT REQUIREMENTS DOCUMENT (PRD)
 1) Project Overview
 Project: Local web app that turns highlighted reading passages into high-quality spaced-repetition Q&A cards (Matuschak-style), lets me edit/curate them, and exports selected cards into Mochi Cards.
-Working name: PromptForge
+Working name: SpaceRepCards
 Version scope: V0 (text-only input, selection-based generation)
 
 2) Purpose & Problem
