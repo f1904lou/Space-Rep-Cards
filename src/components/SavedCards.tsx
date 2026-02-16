@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { getAllCards, updateCard, deleteCards, saveCards } from "../lib/db";
+import {
+  pushCards as mochiPushCards,
+  exportMochiFile,
+  MochiCorsError,
+} from "../lib/mochi";
 import type { Card, CardType } from "../types";
 
 const TYPE_COLORS: Record<CardType, string> = {
@@ -58,6 +63,14 @@ export default function SavedCards() {
   const [editingTopic, setEditingTopic] = useState<string | null>(null);
   const [editingTopicValue, setEditingTopicValue] = useState("");
 
+  const [mochiKey, setMochiKey] = useState("");
+  const [pushing, setPushing] = useState(false);
+  const [pushProgress, setPushProgress] = useState("");
+  const [pushResult, setPushResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
   const load = useCallback(async () => {
     const all = await getAllCards();
     setCards(all);
@@ -66,6 +79,13 @@ export default function SavedCards() {
 
   useEffect(() => {
     load();
+    try {
+      const raw = localStorage.getItem("promptforge_settings");
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.mochiApiKey) setMochiKey(s.mochiApiKey);
+      }
+    } catch {}
   }, [load]);
 
   function toggleSelected(id: string) {
@@ -146,16 +166,64 @@ export default function SavedCards() {
     await load();
   }
 
+  function getCardsToExport(): Card[] {
+    return selected.size > 0
+      ? cards.filter((c) => selected.has(c.id))
+      : cards;
+  }
+
+  async function handlePushToMochi() {
+    const toPush = getCardsToExport();
+    if (toPush.length === 0) return;
+
+    setPushing(true);
+    setPushProgress("Preparing...");
+    setPushResult(null);
+
+    try {
+      const result = await mochiPushCards(mochiKey, toPush, (current, total) =>
+        setPushProgress(`Pushing card ${current} of ${total}...`),
+      );
+      setPushResult({
+        ok: result.failed === 0,
+        message:
+          result.failed === 0
+            ? `${result.success} cards pushed to Mochi!`
+            : `${result.success} pushed, ${result.failed} failed.`,
+      });
+    } catch (err) {
+      if (err instanceof MochiCorsError) {
+        setPushResult({
+          ok: false,
+          message:
+            "Mochi API blocked by browser (CORS). Downloading .mochi file instead.",
+        });
+        await exportMochiFile(toPush);
+      } else {
+        setPushResult({
+          ok: false,
+          message: err instanceof Error ? err.message : "Push failed",
+        });
+      }
+    } finally {
+      setPushing(false);
+      setPushProgress("");
+      setTimeout(() => setPushResult(null), 5000);
+    }
+  }
+
+  async function handleExportMochi() {
+    const toExport = getCardsToExport();
+    if (toExport.length === 0) return;
+    await exportMochiFile(toExport);
+  }
+
   function handleExportCSV() {
-    const toExport =
-      selected.size > 0 ? cards.filter((c) => selected.has(c.id)) : cards;
-    exportCSV(toExport);
+    exportCSV(getCardsToExport());
   }
 
   function handleExportMarkdown() {
-    const toExport =
-      selected.size > 0 ? cards.filter((c) => selected.has(c.id)) : cards;
-    exportMarkdown(toExport);
+    exportMarkdown(getCardsToExport());
   }
 
   const grouped = groupByTopic(cards);
@@ -198,19 +266,35 @@ export default function SavedCards() {
         </div>
 
         <div className="flex items-center gap-2">
+          {mochiKey && (
+            <button
+              onClick={handlePushToMochi}
+              disabled={cards.length === 0 || pushing}
+              className="px-4 py-1.5 text-sm font-medium rounded-lg bg-white text-gray-900 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {pushing ? "Pushing..." : "Push to Mochi"}
+            </button>
+          )}
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportMochi}
             disabled={cards.length === 0}
             className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
-            Export CSV
+            Export .mochi
+          </button>
+          <button
+            onClick={handleExportCSV}
+            disabled={cards.length === 0}
+            className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            CSV
           </button>
           <button
             onClick={handleExportMarkdown}
             disabled={cards.length === 0}
-            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
-            Export Markdown
+            Markdown
           </button>
           <button
             onClick={handleDelete}
@@ -221,6 +305,19 @@ export default function SavedCards() {
           </button>
         </div>
       </div>
+
+      {/* Push progress / result */}
+      {pushProgress && (
+        <p className="text-sm text-gray-400">{pushProgress}</p>
+      )}
+      {pushResult && (
+        <div
+          className={`flex items-center gap-2 text-sm ${pushResult.ok ? "text-green-400" : "text-red-400"}`}
+        >
+          <span>{pushResult.ok ? "\u2713" : "\u2717"}</span>
+          <span>{pushResult.message}</span>
+        </div>
+      )}
 
       {/* Grouped card list */}
       <div className="flex flex-col gap-6">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { testConnection as testMochiConnection } from "../lib/mochi";
 
 const LS_KEY = "promptforge_settings";
 
@@ -6,14 +7,15 @@ interface SavedSettings {
   provider: "openai";
   model: string;
   apiKey: string;
+  mochiApiKey: string;
 }
 
 function loadSettings(): SavedSettings {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return { mochiApiKey: "", ...JSON.parse(raw) };
   } catch {}
-  return { provider: "openai", model: "gpt-4o", apiKey: "" };
+  return { provider: "openai", model: "gpt-4o", apiKey: "", mochiApiKey: "" };
 }
 
 function persistSettings(s: SavedSettings) {
@@ -32,14 +34,23 @@ export default function Settings() {
     message: string;
   } | null>(null);
 
+  const [mochiApiKey, setMochiApiKey] = useState("");
+  const [showMochiKey, setShowMochiKey] = useState(false);
+  const [testingMochi, setTestingMochi] = useState(false);
+  const [mochiTestResult, setMochiTestResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
   useEffect(() => {
     const s = loadSettings();
     setModel(s.model);
     setApiKey(s.apiKey);
+    setMochiApiKey(s.mochiApiKey);
   }, []);
 
   function handleSave() {
-    persistSettings({ provider: "openai", model, apiKey });
+    persistSettings({ provider: "openai", model, apiKey, mochiApiKey });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -73,6 +84,18 @@ export default function Settings() {
     } finally {
       setTesting(false);
     }
+  }
+
+  async function handleTestMochi() {
+    if (!mochiApiKey.trim()) {
+      setMochiTestResult({ ok: false, message: "Enter a Mochi API key first." });
+      return;
+    }
+    setTestingMochi(true);
+    setMochiTestResult(null);
+    const result = await testMochiConnection(mochiApiKey);
+    setMochiTestResult(result);
+    setTestingMochi(false);
   }
 
   return (
@@ -138,6 +161,58 @@ export default function Settings() {
         >
           <span>{testResult.ok ? "\u2713" : "\u2717"}</span>
           <span>{testResult.message}</span>
+        </div>
+      )}
+
+      {/* Divider */}
+      <hr className="border-gray-700" />
+
+      {/* Mochi Integration */}
+      <h3 className="text-sm font-semibold text-gray-200 tracking-wide">
+        Mochi Integration
+      </h3>
+
+      <div className="flex flex-col gap-2">
+        <label className="text-sm font-medium text-gray-300">
+          Mochi API Key
+        </label>
+        <div className="relative">
+          <input
+            type={showMochiKey ? "text" : "password"}
+            value={mochiApiKey}
+            onChange={(e) => setMochiApiKey(e.target.value)}
+            placeholder="Your Mochi API key"
+            className="w-full px-3 py-2 pr-16 rounded-lg border border-gray-700 bg-gray-900 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-600"
+          />
+          <button
+            onClick={() => setShowMochiKey(!showMochiKey)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 cursor-pointer"
+          >
+            {showMochiKey ? "Hide" : "Show"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500">
+          Get your API key from Account Settings in the Mochi app. Requires Pro
+          subscription.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleTestMochi}
+          disabled={testingMochi}
+          className="px-5 py-2 text-sm font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          {testingMochi ? "Testing..." : "Test Mochi Connection"}
+        </button>
+      </div>
+
+      {mochiTestResult && (
+        <div
+          className={`flex items-center gap-2 text-sm ${mochiTestResult.ok ? "text-green-400" : "text-red-400"}`}
+        >
+          <span>{mochiTestResult.ok ? "\u2713" : "\u2717"}</span>
+          <span>{mochiTestResult.message}</span>
         </div>
       )}
     </div>

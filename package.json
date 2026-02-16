@@ -1,5 +1,5 @@
 {
-  "name": "promptforge",
+  "name": "sapce-rep",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "idb": "^8.0.3",
+    "jszip": "^3.10.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
