@@ -1,1 +1,24 @@
 @import "tailwindcss";
+
+/* PDF.js text layer — transparent spans over canvas, selectable */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.textLayer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer span::selection {
+  background-color: rgba(59, 130, 246, 0.4);
+  color: transparent;
+}

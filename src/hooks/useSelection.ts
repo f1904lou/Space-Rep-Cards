@@ -12,8 +12,10 @@ export function useSelection(editorRef: RefObject<HTMLElement | null>) {
       return;
     }
 
-    // Only count selection if it's within the editor
+    // Only count selection if it's within the active content container
     if (!editorRef.current.contains(sel.anchorNode)) {
+      setSelectedText("");
+      setWordCount(0);
       return;
     }
 
