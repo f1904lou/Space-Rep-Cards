@@ -27,7 +27,11 @@ export default function SaveSourceBanner({
     };
     await saveSource(source);
     setSaving(false);
-    onSaved ? onSaved(title.trim()) : onDismiss();
+    if (onSaved) {
+      onSaved(title.trim());
+    } else {
+      onDismiss();
+    }
   }
 
   return (

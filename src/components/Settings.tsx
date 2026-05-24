@@ -1,21 +1,28 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { testConnection as testMochiConnection } from "../lib/mochi";
+import { apiFetch, readApiError } from "../lib/api";
 
 const LS_KEY = "promptforge_settings";
 
 interface SavedSettings {
   provider: "openai";
   model: string;
-  apiKey: string;
-  mochiApiKey: string;
 }
 
 function loadSettings(): SavedSettings {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return { mochiApiKey: "", ...JSON.parse(raw) };
-  } catch {}
-  return { provider: "openai", model: "gpt-4o", apiKey: "", mochiApiKey: "" };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<SavedSettings>;
+      return {
+        provider: "openai",
+        model: parsed.model || "gpt-4o",
+      };
+    }
+  } catch {
+    // Ignore malformed legacy settings and fall back to safe defaults.
+  }
+  return { provider: "openai", model: "gpt-4o" };
 }
 
 function persistSettings(s: SavedSettings) {
@@ -24,8 +31,6 @@ function persistSettings(s: SavedSettings) {
 
 export default function Settings() {
   const [model, setModel] = useState("gpt-4o");
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [testing, setTesting] = useState(false);
@@ -34,48 +39,36 @@ export default function Settings() {
     message: string;
   } | null>(null);
 
-  const [mochiApiKey, setMochiApiKey] = useState("");
-  const [showMochiKey, setShowMochiKey] = useState(false);
   const [testingMochi, setTestingMochi] = useState(false);
   const [mochiTestResult, setMochiTestResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   useEffect(() => {
     const s = loadSettings();
     setModel(s.model);
-    setApiKey(s.apiKey);
-    setMochiApiKey(s.mochiApiKey);
+    persistSettings(s);
   }, []);
 
   function handleSave() {
-    persistSettings({ provider: "openai", model, apiKey, mochiApiKey });
+    persistSettings({ provider: "openai", model });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
   async function handleTest() {
-    if (!apiKey.trim()) {
-      setTestResult({ ok: false, message: "Enter an API key first." });
-      return;
-    }
-
     setTesting(true);
     setTestResult(null);
 
     try {
-      const res = await fetch("https://api.openai.com/v1/models", {
-        headers: { Authorization: `Bearer ${apiKey}` },
+      const res = await apiFetch("/api/openai/models");
+      setTestResult({
+        ok: res.ok,
+        message: res.ok ? "Connection successful" : await readApiError(res),
       });
-      if (res.ok) {
-        setTestResult({ ok: true, message: "Connection successful" });
-      } else {
-        const data = await res.json().catch(() => null);
-        const msg =
-          data?.error?.message ?? `Error ${res.status}: ${res.statusText}`;
-        setTestResult({ ok: false, message: msg });
-      }
     } catch (err) {
       setTestResult({
         ok: false,
@@ -87,19 +80,28 @@ export default function Settings() {
   }
 
   async function handleTestMochi() {
-    if (!mochiApiKey.trim()) {
-      setMochiTestResult({ ok: false, message: "Enter a Mochi API key first." });
-      return;
-    }
     setTestingMochi(true);
     setMochiTestResult(null);
-    const result = await testMochiConnection(mochiApiKey);
+    const result = await testMochiConnection();
     setMochiTestResult(result);
     setTestingMochi(false);
   }
 
+  async function handleLogout() {
+    setLoggingOut(true);
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    window.location.reload();
+  }
+
   return (
     <div className="max-w-lg mx-auto px-6 py-10 flex flex-col gap-6">
+      <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
+        <p className="text-sm text-gray-300">
+          Provider keys are configured on the server through Vercel environment
+          variables. This browser stores only non-secret preferences.
+        </p>
+      </div>
+
       {/* Model */}
       <div className="flex flex-col gap-2">
         <label className="text-sm font-medium text-gray-300">Model</label>
@@ -109,35 +111,11 @@ export default function Settings() {
           onChange={(e) => setModel(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-700 bg-gray-900 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-600"
         />
-      </div>
-
-      {/* API Key */}
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-gray-300">
-          OpenAI API Key
-        </label>
-        <div className="relative">
-          <input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            className="w-full px-3 py-2 pr-16 rounded-lg border border-gray-700 bg-gray-900 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-600"
-          />
-          <button
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 cursor-pointer"
-          >
-            {showKey ? "Hide" : "Show"}
-          </button>
-        </div>
         <p className="text-xs text-gray-500">
-          Your API key is stored locally in your browser and never sent anywhere
-          except OpenAI's API.
+          Leave as gpt-4o unless you set a different OpenAI model in Vercel.
         </p>
       </div>
 
-      {/* Actions */}
       <div className="flex items-center gap-3 pt-2">
         <button
           onClick={handleSave}
@@ -150,11 +128,10 @@ export default function Settings() {
           disabled={testing}
           className="px-5 py-2 text-sm font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >
-          {testing ? "Testing..." : "Test Connection"}
+          {testing ? "Testing..." : "Test OpenAI"}
         </button>
       </div>
 
-      {/* Test result */}
       {testResult && (
         <div
           className={`flex items-center gap-2 text-sm ${testResult.ok ? "text-green-400" : "text-red-400"}`}
@@ -164,38 +141,15 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Divider */}
       <hr className="border-gray-700" />
 
-      {/* Mochi Integration */}
       <h3 className="text-sm font-semibold text-gray-200 tracking-wide">
         Mochi Integration
       </h3>
 
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-gray-300">
-          Mochi API Key
-        </label>
-        <div className="relative">
-          <input
-            type={showMochiKey ? "text" : "password"}
-            value={mochiApiKey}
-            onChange={(e) => setMochiApiKey(e.target.value)}
-            placeholder="Your Mochi API key"
-            className="w-full px-3 py-2 pr-16 rounded-lg border border-gray-700 bg-gray-900 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-600"
-          />
-          <button
-            onClick={() => setShowMochiKey(!showMochiKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 cursor-pointer"
-          >
-            {showMochiKey ? "Hide" : "Show"}
-          </button>
-        </div>
-        <p className="text-xs text-gray-500">
-          Get your API key from Account Settings in the Mochi app. Requires Pro
-          subscription.
-        </p>
-      </div>
+      <p className="text-xs text-gray-500">
+        Mochi pushes use the server-side MOCHI_API_KEY configured in Vercel.
+      </p>
 
       <div className="flex items-center gap-3">
         <button
@@ -203,7 +157,7 @@ export default function Settings() {
           disabled={testingMochi}
           className="px-5 py-2 text-sm font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >
-          {testingMochi ? "Testing..." : "Test Mochi Connection"}
+          {testingMochi ? "Testing..." : "Test Mochi"}
         </button>
       </div>
 
@@ -215,6 +169,16 @@ export default function Settings() {
           <span>{mochiTestResult.message}</span>
         </div>
       )}
+
+      <hr className="border-gray-700" />
+
+      <button
+        onClick={handleLogout}
+        disabled={loggingOut}
+        className="self-start px-4 py-2 text-sm font-medium rounded-lg text-red-400 hover:bg-red-950 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+      >
+        {loggingOut ? "Logging out..." : "Log out"}
+      </button>
     </div>
   );
 }

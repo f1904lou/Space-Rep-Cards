@@ -3,7 +3,6 @@ import { getAllCards, updateCard, deleteCards, saveCards } from "../lib/db";
 import {
   pushCards as mochiPushCards,
   exportMochiFile,
-  MochiCorsError,
 } from "../lib/mochi";
 import type { Card, CardType } from "../types";
 
@@ -63,7 +62,6 @@ export default function SavedCards() {
   const [editingTopic, setEditingTopic] = useState<string | null>(null);
   const [editingTopicValue, setEditingTopicValue] = useState("");
 
-  const [mochiKey, setMochiKey] = useState("");
   const [pushing, setPushing] = useState(false);
   const [pushProgress, setPushProgress] = useState("");
   const [pushResult, setPushResult] = useState<{
@@ -79,13 +77,6 @@ export default function SavedCards() {
 
   useEffect(() => {
     load();
-    try {
-      const raw = localStorage.getItem("promptforge_settings");
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (s.mochiApiKey) setMochiKey(s.mochiApiKey);
-      }
-    } catch {}
   }, [load]);
 
   function toggleSelected(id: string) {
@@ -181,7 +172,7 @@ export default function SavedCards() {
     setPushResult(null);
 
     try {
-      const result = await mochiPushCards(mochiKey, toPush, (current, total) =>
+      const result = await mochiPushCards(toPush, (current, total) =>
         setPushProgress(`Pushing card ${current} of ${total}...`),
       );
       setPushResult({
@@ -192,19 +183,10 @@ export default function SavedCards() {
             : `${result.success} pushed, ${result.failed} failed.`,
       });
     } catch (err) {
-      if (err instanceof MochiCorsError) {
-        setPushResult({
-          ok: false,
-          message:
-            "Mochi API blocked by browser (CORS). Downloading .mochi file instead.",
-        });
-        await exportMochiFile(toPush);
-      } else {
-        setPushResult({
-          ok: false,
-          message: err instanceof Error ? err.message : "Push failed",
-        });
-      }
+      setPushResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Push failed",
+      });
     } finally {
       setPushing(false);
       setPushProgress("");
@@ -266,15 +248,13 @@ export default function SavedCards() {
         </div>
 
         <div className="flex items-center gap-2">
-          {mochiKey && (
-            <button
-              onClick={handlePushToMochi}
-              disabled={cards.length === 0 || pushing}
-              className="px-4 py-1.5 text-sm font-medium rounded-lg bg-white text-gray-900 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              {pushing ? "Pushing..." : "Push to Mochi"}
-            </button>
-          )}
+          <button
+            onClick={handlePushToMochi}
+            disabled={cards.length === 0 || pushing}
+            className="px-4 py-1.5 text-sm font-medium rounded-lg bg-white text-gray-900 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            {pushing ? "Pushing..." : "Push to Mochi"}
+          </button>
           <button
             onClick={handleExportMochi}
             disabled={cards.length === 0}

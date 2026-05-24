@@ -1,28 +1,10 @@
-const LS_KEY = "promptforge_settings";
-
-function getApiKey(): string {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return (JSON.parse(raw) as { apiKey?: string }).apiKey ?? "";
-  } catch {
-    // ignore
-  }
-  return "";
-}
+import { apiFetch, readApiError } from "./api";
 
 export async function extractTextFromRegion(
   dataUrl: string,
-  _apiKey?: string,
 ): Promise<string> {
-  const apiKey = _apiKey ?? getApiKey();
-  if (!apiKey) throw new Error("Set your API key in Settings first.");
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await apiFetch("/api/openai/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
@@ -41,16 +23,9 @@ export async function extractTextFromRegion(
   });
 
   if (!res.ok) {
-    const data = await res
-      .json()
-      .catch(() => null) as { error?: { message?: string } } | null;
-    throw new Error(
-      data?.error?.message ?? `OpenAI error ${res.status}: ${res.statusText}`,
-    );
+    throw new Error(await readApiError(res));
   }
 
-  const data = await res.json() as {
-    choices?: { message?: { content?: string } }[];
-  };
-  return data.choices?.[0]?.message?.content ?? "";
+  const data = (await res.json()) as { content?: string };
+  return data.content ?? "";
 }

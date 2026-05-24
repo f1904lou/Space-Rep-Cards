@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { extractTextFromRegion } from "../lib/vision";
 
-const TEST_API_KEY = "sk-test-abc123";
 const TEST_DATA_URL = "data:image/jpeg;base64,/9j/fakeimagedata";
 
 afterEach(() => {
@@ -10,27 +9,20 @@ afterEach(() => {
 });
 
 describe("extractTextFromRegion", () => {
-  it("sends the correct payload to the OpenAI vision endpoint", async () => {
+  it("sends the correct payload to the server-side OpenAI endpoint", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        choices: [{ message: { content: "Some extracted text" } }],
-      }),
+      json: async () => ({ content: "Some extracted text" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await extractTextFromRegion(TEST_DATA_URL, TEST_API_KEY);
+    await extractTextFromRegion(TEST_DATA_URL);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
 
-    // Correct endpoint
-    expect(url).toBe("https://api.openai.com/v1/chat/completions");
-
-    // Auth header uses the stored API key
-    expect((options.headers as Record<string, string>)["Authorization"]).toBe(
-      `Bearer ${TEST_API_KEY}`,
-    );
+    expect(url).toBe("/api/openai/chat");
+    expect(options.credentials).toBe("include");
 
     const body = JSON.parse(options.body as string) as {
       model: string;
@@ -58,13 +50,11 @@ describe("extractTextFromRegion", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          choices: [{ message: { content: expectedText } }],
-        }),
+        json: async () => ({ content: expectedText }),
       }),
     );
 
-    const result = await extractTextFromRegion(TEST_DATA_URL, TEST_API_KEY);
+    const result = await extractTextFromRegion(TEST_DATA_URL);
 
     expect(result).toBe(expectedText);
   });
@@ -76,13 +66,13 @@ describe("extractTextFromRegion", () => {
         ok: false,
         status: 401,
         statusText: "Unauthorized",
-        json: async () => ({ error: { message: "Invalid API key provided." } }),
+        json: async () => ({ error: "Authentication required" }),
       }),
     );
 
     await expect(
-      extractTextFromRegion(TEST_DATA_URL, TEST_API_KEY),
-    ).rejects.toThrow("Invalid API key provided.");
+      extractTextFromRegion(TEST_DATA_URL),
+    ).rejects.toThrow("Authentication required");
   });
 
   it("throws a fallback message when non-ok response has no error body", async () => {
@@ -97,7 +87,7 @@ describe("extractTextFromRegion", () => {
     );
 
     await expect(
-      extractTextFromRegion(TEST_DATA_URL, TEST_API_KEY),
-    ).rejects.toThrow("OpenAI error 500: Internal Server Error");
+      extractTextFromRegion(TEST_DATA_URL),
+    ).rejects.toThrow("Request failed (500)");
   });
 });

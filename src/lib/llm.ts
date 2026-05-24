@@ -1,5 +1,6 @@
 import type { Card, CardType } from "../types";
 import { SYSTEM_PROMPT, DEVELOPER_PROMPT, buildUserMessage } from "./prompts";
+import { apiFetch, readApiError } from "./api";
 
 const LS_KEY = "promptforge_settings";
 const VALID_TYPES: CardType[] = ["factual", "conceptual", "procedural", "salience"];
@@ -7,15 +8,22 @@ const VALID_TYPES: CardType[] = ["factual", "conceptual", "procedural", "salienc
 interface Settings {
   provider: "openai";
   model: string;
-  apiKey: string;
 }
 
 function getSettings(): Settings {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { provider: "openai", model: "", apiKey: "" };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<Settings>;
+      return {
+        provider: "openai",
+        model: parsed.model || "gpt-4o",
+      };
+    }
+  } catch {
+    // Ignore malformed legacy settings and fall back to safe defaults.
+  }
+  return { provider: "openai", model: "gpt-4o" };
 }
 
 interface RawCard {
@@ -74,12 +82,8 @@ async function callOpenAI(
     });
   }
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await apiFetch("/api/openai/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.apiKey}`,
-    },
     body: JSON.stringify({
       model: settings.model,
       messages,
@@ -88,14 +92,11 @@ async function callOpenAI(
   });
 
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(
-      data?.error?.message ?? `OpenAI error ${res.status}: ${res.statusText}`,
-    );
+    throw new Error(await readApiError(res));
   }
 
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  const data = (await res.json()) as { content?: string };
+  return data.content ?? "";
 }
 
 export interface GenerateResult {
@@ -110,9 +111,6 @@ export async function generateCards(
 ): Promise<GenerateResult> {
   const settings = getSettings();
 
-  if (!settings.apiKey) {
-    return { error: "Set your API key in Settings first." };
-  }
   if (!settings.model) {
     return { error: "Set a model name in Settings first." };
   }
