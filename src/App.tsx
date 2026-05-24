@@ -16,9 +16,18 @@ export default function App() {
         {/* Header */}
         <header className="bg-gray-900 border-b border-gray-800">
           <div className="max-w-5xl mx-auto flex items-center justify-between px-6 pt-5 pb-0">
-            <h1 className="text-lg font-semibold tracking-tight">
-              Spaced Repetition Cards
-            </h1>
+            <div className="flex items-center gap-4">
+              <div
+                className="flex w-16 flex-col gap-2"
+                aria-hidden="true"
+              >
+                <span className="h-2 w-10 rounded-sm bg-emerald-500" />
+                <span className="h-2 w-16 rounded-sm bg-red-500" />
+              </div>
+              <h1 className="text-lg font-semibold tracking-tight">
+                Spaced Repetition Cards
+              </h1>
+            </div>
           </div>
           <div className="max-w-5xl mx-auto">
             <TabNav active={tab} onChange={setTab} />
