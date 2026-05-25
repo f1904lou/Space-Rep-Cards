@@ -1,6 +1,39 @@
 import { requireSession } from "../_lib/auth.js";
 import { allowMethods, missingEnv, providerError } from "../_lib/http.js";
 
+async function callOpenAI({ apiKey, model, messages, responseFormat }) {
+  const body = {
+    model,
+    messages,
+  };
+
+  if (responseFormat) {
+    body.response_format = responseFormat;
+  }
+
+  const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await upstream.json().catch(() => null);
+  return { upstream, data };
+}
+
+function isUnsupportedResponseFormat(message) {
+  const normalized = String(message).toLowerCase();
+  return (
+    normalized.includes("response_format") &&
+    (normalized.includes("not supported") ||
+      normalized.includes("unsupported") ||
+      normalized.includes("invalid parameter"))
+  );
+}
+
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ["POST"])) return;
   if (!requireSession(req, res)) return;
@@ -23,20 +56,27 @@ export default async function handler(req, res) {
       : process.env.OPENAI_MODEL || "gpt-4o";
 
   try {
-    const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: requestedModel,
-        messages,
-        response_format,
-      }),
+    let { upstream, data } = await callOpenAI({
+      apiKey,
+      model: requestedModel,
+      messages,
+      responseFormat: response_format,
     });
 
-    const data = await upstream.json().catch(() => null);
+    if (!upstream.ok && response_format) {
+      const message = providerError(
+        data,
+        `OpenAI error ${upstream.status}: ${upstream.statusText}`,
+      );
+      if (isUnsupportedResponseFormat(message)) {
+        ({ upstream, data } = await callOpenAI({
+          apiKey,
+          model: requestedModel,
+          messages,
+        }));
+      }
+    }
+
     if (!upstream.ok) {
       res.status(upstream.status).json({
         error: providerError(
